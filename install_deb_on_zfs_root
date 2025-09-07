@@ -1,0 +1,120 @@
+install debian 13 on zfs root
+create new user with sudo on live system
+install ssh
+connect to live system from laptop by ssh
+sudo -i
+nano /etc/apt/sources.list
+deb http://deb.debian.org/debian trixie main contrib non-free-firmware
+deb http://deb.debian.org/debian trixie-updates main contrib non-free-firmware
+deb http://security.debian.org/debian-security trixie-security main contrib non-free-firmware
+apt update
+apt install debootstrap gdisk zfsutils-linux grub2
+apt install linux-headers-$(uname -r) build-essential dkms
+dkms autoinstall -k "$(uname -r)"
+modprobe zfs
+
+
+zpool labelclear -f /dev/nvme4n1
+wipefs -a /dev/nvme4n1
+sgdisk --zap-all /dev/nvme4n1
+sgdisk -n1:1M:+512M -t1:EF00 /dev/nvme4n1   # EFI System Partition
+sgdisk -n2:0:+1G    -t2:BF01 /dev/nvme4n1   # ZFS boot
+sgdisk -n3:0:0      -t3:BF01 /dev/nvme4n1   # ZFS root
+
+
+
+
+zpool create \
+    -o ashift=12 \
+    -o autotrim=on \
+    -o compatibility=grub2 \
+    -O devices=off \
+    -O acltype=posixacl -O xattr=sa \
+    -O compression=off \
+    -O canmount=off -O mountpoint=/boot -R /mnt \
+    bpool /dev/nvme4n1p2
+
+zpool create \
+    -o ashift=12 \
+    -o autotrim=on \
+    -O acltype=posixacl -O xattr=sa -O dnodesize=auto \
+    -O compression=lz4 \
+    -O normalization=formD \
+    -O relatime=on \
+    -O canmount=off -O mountpoint=/ -R /mnt \
+    rpool /dev/nvme4n1p3
+
+zfs create                     rpool/home
+zfs create -o mountpoint=/root rpool/home/root
+chmod 700 /mnt/root
+zfs create -o canmount=off     rpool/var
+zfs create -o canmount=off     rpool/var/lib
+zfs create                     rpool/var/log
+zfs create                     rpool/var/spool
+
+
+
+
+
+mkfs.vfat -F32 /dev/nvme4n1p1
+mkdir -p /mnt/boot/efi
+mount /dev/nvme4n1p1 /mnt/boot/efi
+
+debootstrap --arch=amd64 trixie /mnt http://deb.debian.org/debian
+
+           
+mount --rbind /dev  /mnt/dev
+mount --rbind /dev/pts /mnt/dev/pts
+mount -t proc proc /mnt/proc
+mount -t sysfs sys   /mnt/sys
+mount --bind /run   /mnt/run
+
+chroot /mnt /bin/bash
+
+cat > /etc/apt/sources.list <<EOF
+deb http://deb.debian.org/debian trixie main contrib non-free-firmware
+deb http://deb.debian.org/debian trixie-updates main contrib non-free-firmware
+deb http://security.debian.org/debian-security trixie-security main contrib non-free-firmware
+EOF
+apt update
+apt install linux-image-amd64 systemd-sysv zfs-initramfs zfsutils-linux grub-efi-amd64 efibootmgr dosfstools console-setup sudo 
+
+
+adduser pi
+usermod -aG sudo pi
+
+echo server > /etc/hostname
+cat > /etc/hosts <<EOF
+127.0.0.1   localhost
+127.0.1.1   server
+EOF
+
+
+echo "RESUME=none" > /etc/initramfs-tools/conf.d/resume
+echo "ZPOOL=rpool" > /etc/default/zfs
+
+zfs create -o mountpoint=/boot rpool/boot
+
+update-initramfs -c -k all
+---------------------------------
+grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=debian --recheck
+update-grub
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
