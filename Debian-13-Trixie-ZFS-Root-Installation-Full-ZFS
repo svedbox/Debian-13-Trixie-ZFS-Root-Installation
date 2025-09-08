@@ -1,0 +1,111 @@
+### install debian 13 on zfs root ###
+Boot in Debian 13 live usb
+create new user with sudo on live system
+install ssh
+connect to live system from laptop by ssh
+sudo -i
+nano /etc/apt/sources.list
+deb http://deb.debian.org/debian trixie main contrib non-free-firmware
+deb http://deb.debian.org/debian trixie-updates main contrib non-free-firmware
+deb http://security.debian.org/debian-security trixie-security main contrib non-free-firmware
+apt update
+apt install debootstrap gdisk zfsutils-linux grub2
+apt install linux-headers-$(uname -r) build-essential dkms
+dkms autoinstall -k "$(uname -r)"
+modprobe zfs
+
+zpool labelclear -f /dev/nvme0n1
+wipefs -a /dev/nvme0n1
+blkdiscard -f /dev/nvme0n1
+sgdisk --zap-all /dev/nvme0n1
+dd if=/dev/zero of=/dev/nvme0n1 count=100 bs=512
+sgdisk -Z /dev/nvme0n1
+
+sgdisk -n1:1M:+512M -t1:EF00 /dev/nvme0n1   # EFI System Partition
+sgdisk -n2:0:+2G    -t2:BF01 /dev/nvme0n1   # boot
+sgdisk -n3:0:0      -t3:BF00 /dev/nvme0n1   # ZFS root
+
+mkfs.fat -F 32 /dev/nvme0n1p1
+mkfs.ext4 /dev/nvme0n1p2
+zpool create \
+    -o ashift=12 \
+    -o autotrim=on \
+    -O normalization=formD \
+    -O acltype=posixacl \
+    -O xattr=sa \
+    -O dnodesize=auto \
+    -O canmount=off \
+    -O compression=lz4 \
+    -O relatime=on \
+    -O mountpoint=none -R /mnt rpool /dev/nvme0n1p3
+
+zfs create -o canmount=noauto -o mountpoint=/ rpool/root
+zfs mount rpool/root
+zfs create -o mountpoint=/home rpool/home
+zfs create -o mountpoint=/var rpool/var
+zfs create -o mountpoint=/var/log rpool/var/log
+zfs create -o mountpoint=/var/cache rpool/var/cache
+zfs create -o mountpoint=/var/lib rpool/var/lib
+zfs create -o mountpoint=/var/spool rpool/var/spool
+zfs create -o mountpoint=/srv rpool/srv
+zfs create -o mountpoint=/opt rpool/opt
+
+mkdir /mnt/boot; mount /dev/nvme0n1p2 /mnt/boot 
+mkdir /mnt/boot/efi; mount /dev/nvme0n1p1 /mnt/boot/efi
+
+debootstrap trixie /mnt
+zfs set devices=off rpool
+
+echo HOSTNAME > /mnt/hostname
+echo 127.0.0.1 localhost HOSTNAME > /mnt/hosts
+
+nano /mnt/etc/apt/sources.list
+deb http://deb.debian.org/debian trixie main contrib non-free-firmware
+deb http://deb.debian.org/debian trixie-updates main contrib non-free-firmware
+deb http://security.debian.org/debian-security trixie-security main contrib non-free-firmware
+
+mount --rbind /dev  /mnt/dev
+mount --rbind /proc /mnt/proc
+mount --rbind /sys  /mnt/sys
+chroot /mnt /bin/bash --login
+
+date -s "YYYY-MM-DD HH:MM:SS"
+apt update
+apt install locales sudo -y
+
+locale-gen --purge "en_US.UTF-8"
+update-locale LANG=en_US.UTF-8 LANGUAGE=en_US
+dpkg-reconfigure --frontend noninteractive locales
+dpkg-reconfigure tzdata
+
+adduser user
+usermod -aG sudo user
+
+apt update; apt full-upgrade -y
+apt install console-setup zfs-initramfs shim-signed grub-efi-amd64-signed linux-image-generic linux-headers-generic openssh-server -y
+dpkg-reconfigure locales
+
+nano /etc/fstab
+/dev/nvme0n1p1  /boot/efi               vfat    noatime,nofail,x-systemd.device-timeout=5s      0       1
+/dev/nvme0n1p2  /boot                   ext4    noatime,nofail,x-systemd.device-timeout=5s      0       1
+
+update-initramfs -u -k all
+grub-install /dev/nvme0n1p1
+nano /etc/grub.d/10_linux
+xzfs)
+    rpool=`${grub_probe} --device ${GRUB_DEVICE} --target=fs_label 2>/dev/null || true`
+    bootfs=`zpool get -H -o value bootfs $rpool`
+    LINUX_ROOT_DEVICE="ZFS=${bootfs}"
+    ;;
+nano /etc/default/grub
+GRUB_CMDLINE_LINUX=""
+zpool set bootfs=rpool/root rpool
+
+update-grub
+#########
+exit
+umount /mnt/boot/efi
+umount /mnt/boot
+umount -lf /mnt
+zpool export -a
+reboot
