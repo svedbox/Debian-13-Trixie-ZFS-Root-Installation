@@ -26,7 +26,19 @@ sgdisk -n2:0:+2G    -t2:BF01 /dev/nvme0n1   # boot
 sgdisk -n3:0:0      -t3:BF00 /dev/nvme0n1   # ZFS root
 
 mkfs.fat -F 32 /dev/nvme0n1p1
-mkfs.ext4 /dev/nvme0n1p2
+
+zpool create -d \
+    -o ashift=12 \
+    -o compatibility=grub2 \
+    -o autotrim=on \
+    -O devices=off \
+    -O compression=off \
+    -O atime=off \
+    -O normalization=formD \
+    -O relatime=on \
+    -O canmount=off \
+    -O mountpoint=none -R /mnt bpool /dev/nvme0n1p2
+
 zpool create \
     -o ashift=12 \
     -o autotrim=on \
@@ -39,6 +51,8 @@ zpool create \
     -O relatime=on \
     -O mountpoint=none -R /mnt rpool /dev/nvme0n1p3
 
+zfs create -o mountpoint=/boot -o canmount=on bpool/boot
+
 zfs create -o canmount=noauto -o mountpoint=/ rpool/root
 zfs mount rpool/root
 zfs create -o mountpoint=/home rpool/home
@@ -50,7 +64,6 @@ zfs create -o mountpoint=/var/spool rpool/var/spool
 zfs create -o mountpoint=/srv rpool/srv
 zfs create -o mountpoint=/opt rpool/opt
 
-mkdir /mnt/boot; mount /dev/nvme0n1p2 /mnt/boot 
 mkdir /mnt/boot/efi; mount /dev/nvme0n1p1 /mnt/boot/efi
 
 debootstrap trixie /mnt
@@ -87,25 +100,28 @@ dpkg-reconfigure locales
 
 nano /etc/fstab
 /dev/nvme0n1p1  /boot/efi               vfat    noatime,nofail,x-systemd.device-timeout=5s      0       1
-/dev/nvme0n1p2  /boot                   ext4    noatime,nofail,x-systemd.device-timeout=5s      0       1
 
 update-initramfs -u -k all
-grub-install /dev/nvme0n1p1
-nano /etc/grub.d/10_linux
-xzfs)
-    rpool=`${grub_probe} --device ${GRUB_DEVICE} --target=fs_label 2>/dev/null || true`
-    bootfs=`zpool get -H -o value bootfs $rpool`
-    LINUX_ROOT_DEVICE="ZFS=${bootfs}"
-    ;;
-nano /etc/default/grub
-GRUB_CMDLINE_LINUX=""
+    #grub-install /dev/nvme0n1p1
+grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=debian
+
+    #nano /etc/grub.d/10_linux
+    #xzfs)
+    #    rpool=`${grub_probe} --device ${GRUB_DEVICE} --target=fs_label 2>/dev/null || true`
+    #    bootfs=`zpool get -H -o value bootfs $rpool`
+    #    LINUX_ROOT_DEVICE="ZFS=${bootfs}"
+    #    ;;
+    # Check /etc/grub.d/10_linux → ensure ZFS=${bootfs} is set.
 zpool set bootfs=rpool/root rpool
+zpool set bootfs=bpool/boot bpool
+
+    #nano /etc/default/grub
+    #GRUB_CMDLINE_LINUX=""
 
 update-grub
 #########
 exit
 umount /mnt/boot/efi
-umount /mnt/boot
 umount -lf /mnt
 zpool export -a
 reboot
