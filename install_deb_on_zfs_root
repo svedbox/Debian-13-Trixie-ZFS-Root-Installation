@@ -50,7 +50,6 @@ zfs create -o mountpoint=/var/spool rpool/var/spool
 zfs create -o mountpoint=/srv rpool/srv
 zfs create -o mountpoint=/opt rpool/opt
 
-
 mkdir /mnt/boot; mount /dev/nvme0n1p2 /mnt/boot 
 mkdir /mnt/boot/efi; mount /dev/nvme0n1p1 /mnt/boot/efi
 
@@ -74,7 +73,6 @@ date -s "YYYY-MM-DD HH:MM:SS"
 apt update
 apt install locales sudo -y
 
-
 locale-gen --purge "en_US.UTF-8"
 update-locale LANG=en_US.UTF-8 LANGUAGE=en_US
 dpkg-reconfigure --frontend noninteractive locales
@@ -88,8 +86,8 @@ apt install console-setup zfs-initramfs shim-signed grub-efi-amd64-signed linux-
 dpkg-reconfigure locales
 
 nano /etc/fstab
-/dev/nvme0n1p2  /boot                   ext4    noatime,nofail,x-systemd.device-timeout=5s      0       1
 /dev/nvme0n1p1  /boot/efi               vfat    noatime,nofail,x-systemd.device-timeout=5s      0       1
+/dev/nvme0n1p2  /boot                   ext4    noatime,nofail,x-systemd.device-timeout=5s      0       1
 
 update-initramfs -u -k all
 grub-install /dev/nvme0n1p1
@@ -101,7 +99,7 @@ xzfs)
     ;;
 nano /etc/default/grub
 GRUB_CMDLINE_LINUX=""
-zpool set bootfs=rpool/root pi
+zpool set bootfs=rpool/root rpool
 
 update-grub
 #########
