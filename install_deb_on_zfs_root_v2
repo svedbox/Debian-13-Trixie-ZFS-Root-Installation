@@ -81,8 +81,6 @@ mount --rbind /sys  /mnt/sys
 
 chroot /mnt /bin/bash --login
 
-#date -s "YYYY-MM-DD HH:MM:SS"
-
 cat > /etc/apt/sources.list <<'EOF'
 deb http://deb.debian.org/debian trixie main contrib non-free-firmware
 deb http://deb.debian.org/debian trixie-updates main contrib non-free-firmware
@@ -113,30 +111,19 @@ update-initramfs -u -k all
 
 grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=debian
 
-    #nano /etc/grub.d/10_linux
-    #xzfs)
-    #    rpool=`${grub_probe} --device ${GRUB_DEVICE} --target=fs_label 2>/dev/null || true`
-    #    bootfs=`zpool get -H -o value bootfs $rpool`
-    #    LINUX_ROOT_DEVICE="ZFS=${bootfs}"
-    #    ;;
-    # Check /etc/grub.d/10_linux → ensure ZFS=${bootfs} is set.
+/etc/default/grub    GRUB_CMDLINE_LINUX=""
+
+nano /etc/grub.d/10_linux
+xzfs)
+   LINUX_ROOT_DEVICE="ZFS=rpool/root"
+   ;;
 
 update-grub
 ###########################################################################################################
 # Before reboot need to make checking /boot/grub/grub.cfg
-# You should be see something like that "linux   /vmlinuz-6.12.43+deb13-amd64 root=ZFS=rpool/ROOT/debian ro"
-# If no then need to correct /etc/default/grub    GRUB_CMDLINE_LINUX="root=ZFS=rpool/ROOT/debian"
-# and again update-grub
-# and check again 
 # grep linux /boot/grub/grub.cfg
-# also can try correct /etc/grub.d/10_linux
-# #nano /etc/grub.d/10_linux
-#    #xzfs)
-#    #    rpool=`${grub_probe} --device ${GRUB_DEVICE} --target=fs_label 2>/dev/null || true`
-#    #    bootfs=`zpool get -H -o value bootfs $rpool`
-#    #    LINUX_ROOT_DEVICE="ZFS=${bootfs}"
-#    #    ;;
-############################################################################################################
+# You should be see something like that "linux   /vmlinuz-6.12.43+deb13-amd64 root=ZFS=rpool/root ro"
+###########################################################################################################
 exit
 umount /mnt/boot/efi
 umount -lf /mnt
