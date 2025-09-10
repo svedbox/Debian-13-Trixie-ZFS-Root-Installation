@@ -16,18 +16,24 @@ apt install -y linux-headers-$(uname -r) build-essential dkms
 dkms autoinstall -k "$(uname -r)"
 modprobe zfs
 # ===== prepare main disk =====
-zpool labelclear -f /dev/nvme0n1
-wipefs -a /dev/nvme0n1
-blkdiscard -f /dev/nvme0n1
-sgdisk --zap-all /dev/nvme0n1
-dd if=/dev/zero of=/dev/nvme0n1 count=100 bs=512
-sgdisk -Z /dev/nvme0n1
-# ===== make partitions on main disk =====
-sgdisk -n1:1M:+512M -t1:EF00 /dev/nvme0n1   # EFI System Partition
-sgdisk -n2:0:+2G    -t2:BF01 /dev/nvme0n1   # boot
-sgdisk -n3:0:0      -t3:BF00 /dev/nvme0n1   # ZFS root
+swapoff --all
+ls -la /dev/disk/by-id
+DISK=/dev/disk/by-id/nvme-DNTR75-635FFD_64FS458986554SP # for example
 
-mkfs.fat -F 32 /dev/nvme0n1p1
+zpool labelclear -f $DISK
+wipefs -a $DISK
+blkdiscard -f $DISK
+sgdisk --zap-all $DISK
+dd if=/dev/zero of=$DISK count=100 bs=512
+sgdisk -Z $DISK
+
+
+# ===== make partitions on main disk =====
+sgdisk -n1:1M:+512M -t1:EF00 $DISK   # EFI System Partition
+sgdisk -n2:0:+2G    -t2:BF01 $DISK   # boot
+sgdisk -n3:0:0      -t3:BF00 $DISK   # ZFS root
+
+mkfs.fat -F 32 ${DISK}-part1
 
 zpool create \
     -o ashift=12 \
@@ -39,7 +45,7 @@ zpool create \
     -O canmount=off \
     -O compression=lz4 \
     -O relatime=on \
-    -O mountpoint=none -R /mnt rpool /dev/nvme0n1p3
+    -O mountpoint=none -R /mnt rpool ${DISK}-part3
 
 zfs create -o mountpoint=/ rpool/root
 zfs create -o mountpoint=/home rpool/home
@@ -61,19 +67,19 @@ zpool create \
     -O normalization=formD \
     -O relatime=on \
     -O canmount=off \
-    -O mountpoint=none -R /mnt bpool /dev/nvme0n1p2
+    -O mountpoint=none -R /mnt bpool ${DISK}-part2
 
 zfs create -o mountpoint=/boot bpool/boot
 
 mkdir /mnt/boot/efi
-mount /dev/nvme0n1p1 /mnt/boot/efi
+mount ${DISK}-part1 /mnt/boot/efi
 
 # ===== install minimal debian system on main disk =====
 
 debootstrap trixie /mnt
 
-echo HOSTNAME > /mnt/etc/hostname
-echo 127.0.0.1 localhost HOSTNAME > /mnt/etc/hosts
+echo HOSTNAME > /mnt/etc/hostname                    # change to yours
+echo 127.0.0.1 localhost HOSTNAME > /mnt/etc/hosts   # change to yours
 
 mount --rbind /dev  /mnt/dev
 mount --rbind /proc /mnt/proc
@@ -96,7 +102,8 @@ dpkg-reconfigure tzdata
 
 passwd
 
-apt update; apt full-upgrade -y
+apt update
+apt full-upgrade -y
 
 apt install console-setup zfs-initramfs shim-signed grub-efi-amd64-signed linux-image-amd64 linux-headers-amd64 openssh-server -y
 
@@ -105,25 +112,24 @@ dpkg-reconfigure locales
 zpool set bootfs=rpool/root rpool
 
 nano /etc/fstab
-/dev/nvme0n1p1  /boot/efi               vfat    noatime,nofail,x-systemd.device-timeout=5s      0       1
+/dev/disk/by-id/nvme....part1  /boot/efi               vfat    noatime,nofail,x-systemd.device-timeout=5s      0       1
 
 update-initramfs -u -k all
 
 grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=debian
 
-/etc/default/grub    GRUB_CMDLINE_LINUX=""
-
-nano /etc/grub.d/10_linux
+nano /etc/default/grub    
+GRUB_CMDLINE_LINUX=""
+cp /etc/grub.d/10_linux /etc/grub.d/09_linux
+chmod +x /etc/grub.d/09_linux
+chmod -x /etc/grub.d/10_linux
+nano /etc/grub.d/09_linux
 xzfs)
    LINUX_ROOT_DEVICE="ZFS=rpool/root"
    ;;
 
 update-grub
-###########################################################################################################
-# Before reboot need to make checking /boot/grub/grub.cfg
-# grep linux /boot/grub/grub.cfg
-# You should be see something like that "linux   /vmlinuz-6.12.43+deb13-amd64 root=ZFS=rpool/root ro"
-###########################################################################################################
+
 exit
 umount /mnt/boot/efi
 umount -lf /mnt
