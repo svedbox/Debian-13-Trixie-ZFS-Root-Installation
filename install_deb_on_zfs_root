@@ -49,13 +49,6 @@ zpool create \
 
 zfs create -o mountpoint=/ rpool/root
 zfs create -o mountpoint=/home rpool/home
-zfs create -o mountpoint=/var rpool/var
-zfs create -o mountpoint=/var/log rpool/var/log
-zfs create -o mountpoint=/var/cache rpool/var/cache
-zfs create -o mountpoint=/var/lib rpool/var/lib
-zfs create -o mountpoint=/var/spool rpool/var/spool
-zfs create -o mountpoint=/srv rpool/srv
-zfs create -o mountpoint=/opt rpool/opt
 
 zpool create \
     -o ashift=12 \
